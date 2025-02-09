@@ -4,9 +4,10 @@
  * This function dynamically creates a new `.dealer-location-item` element
  * and appends it to the `.dealer-locator-sidebar-items-list` container.
  *
- * @param {Object} location - The dealer location data.
+ * @param {Object} location - The dealer location GeoJSON feature.
  */
 function addDealerToSidebar(location) {
+    const props = location.properties
     // Select the sidebar container
     const sidebarList = document.querySelector('.dealer-locator-sidebar-items-list');
     if (!sidebarList) {
@@ -19,7 +20,7 @@ function addDealerToSidebar(location) {
     dealerItem.classList.add('dealer-location-item');
 
     // Create the dealer name section
-    let dealerHTML = `<div class="dealer-item-name">${location.name}</div><div class="dealer-location-item-facts w-layout-vflex">`;
+    let dealerHTML = `<div class="dealer-item-name">${props.name}</div><div class="dealer-location-item-facts w-layout-vflex">`;
 
     /**
      * Helper function to generate a row only if the value exists.
@@ -37,12 +38,12 @@ function addDealerToSidebar(location) {
 
     // Append rows conditionally
     dealerHTML += createRow("location_on",
-        location.address && location.city && location.state && location.postalCode
-            ? `${location.address}<br>${location.city}, ${location.state} ${location.postalCode}`
+        props.address && props.city && props.state && props.postalCode
+            ? `${props.address}<br>${props.city}, ${props.state} ${props.postalCode}`
             : null);
-    dealerHTML += createRow("call", location.phone);
-    dealerHTML += createRow("schedule", location.hours);
-    dealerHTML += createRow("person", location.diversity);
+    dealerHTML += createRow("call", props.phone);
+    dealerHTML += createRow("schedule", props.hours);
+    dealerHTML += createRow("person", props.diversity);
 
     // Close the container
     dealerHTML += `</div>`;
@@ -54,23 +55,27 @@ function addDealerToSidebar(location) {
 
 /**
  * Adds dealer locations to the Mapbox map.
- * @param {Array} locations - Array of dealer location objects.
+ * @param {Array} locations - Array of dealer location objects (as GeoJSON features).
  * @param {Object} map - Mapbox map instance.
  */
 function addLocationsToMap(locations, map) {
     for (const location of locations) {
+        const props = location.properties
+        const latitude = location.geometry.coordinates[1];
+        const longitude = location.geometry.coordinates[0];
+
         const marker = new mapboxgl.Marker({ className: "dealer-location-pin", color: "red" })
-            .setLngLat([location.lon, location.lat])
+            .setLngLat([longitude, latitude])
             .setPopup(
                 new mapboxgl.Popup({ offset: 25 })
                     .setHTML(
-                        `<h3>${location.name}</h3><p>${location.address}<br>${location.city}, ${location.state} ${location.postalCode}</p>`
+                        `<h3>${props.name}</h3><p>${props.address}<br>${props.city}, ${props.state} ${props.postalCode}</p>`
                     )
             )
             .addTo(map);
         marker.getElement().addEventListener('click', () => {
             map.flyTo({
-                center: [location.lon, location.lat],
+                center: [longitude, latitude],
                 zoom: 13,
                 essential: true
             });
@@ -161,28 +166,36 @@ function getNextPageURL($container) {
 }
 
 /**
- * Parses a dealer location element into a JSON object.
+ * Parses a dealer location element into a GeoJSON feature.
  * @param {HTMLElement} dealerElement - The dealer location element.
- * @returns {Object} - Parsed dealer location data.
+ * @returns {Object} - Parsed dealer location data as a GeoJSON feature.
  */
 function parseDealerElement(dealerElement) {
+    const lon = parseFloat(dealerElement.getAttribute("data-dealer-lon"));
+    const lat = parseFloat(dealerElement.getAttribute("data-dealer-lat"));
+
+    let feature = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [lon, lat]
+        },
+        "properties": {}
+    };
+
     const attributesToExtract = [
         "id", "name", "description", "address", "city", "state",
-        "postalCode", "lat", "lon", "phone", "hours", "diversity", "website"
+        "postalCode", "phone", "hours", "diversity", "website"
     ];
 
-    const dealerData = {};
+    const properties = {};
     attributesToExtract.forEach(attr => {
         let attrValue = dealerElement.getAttribute(`data-dealer-${attr}`);
-
-        if (attr === "lat" || attr === "lon") {
-            dealerData[attr] = attrValue ? parseFloat(attrValue) : null;
-        } else {
-            dealerData[attr] = attrValue ? attrValue.replace(/\\n/g, "<br>") : null;
-        }
+        properties[attr] = attrValue ? attrValue.replace(/\\n/g, "<br>") : null;
     });
 
-    return dealerData;
+    feature.properties = properties;
+    return feature;
 }
 
 /**
@@ -227,27 +240,19 @@ const map = setUpLocatorMap();
         }
     });
 
-    const locations = await getAllDealerLocations();
-    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${locations.length} Dealerships`;
-    for (const location of locations) {
-        addDealerToSidebar(location);
+    const features = await getAllDealerLocations();
+    const geoJSON = {
+        type: 'FeatureCollection',
+        features: features
+    };
+
+    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${geoJSON.features.length} Dealerships`;
+    for (const feature of geoJSON.features) {
+        addDealerToSidebar(feature);
     }
 
     // Load dealer locations on map
     map.on('load', () => {
-        addLocationsToMap(locations, map);
+        addLocationsToMap(geoJSON.features, map);
     });
 })();
-
-// // Find the .w-dyn-items container inside the .dealer-locations-collection
-// const wDynItems = container.querySelector('.w-dyn-items');
-// if (!wDynItems) {
-//     console.warn('No element found with class .w-dyn-items inside .dealer-locations-collection');
-//     return;
-// }
-
-// // Append each location item to .w-dyn-items
-// // `allLocations` is an array of DOM elements
-// allLocations.forEach((locationItem) => {
-//     wDynItems.appendChild(locationItem);
-// });
