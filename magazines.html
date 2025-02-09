@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pagination with Load More</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .items-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .item {
+            border: 1px solid #ddd;
+            padding: 10px;
+            width: calc(25% - 10px);
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        #load-more {
+            margin: 20px auto;
+            display: block;
+            padding: 10px 20px;
+            background-color: #0073e6;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #load-more:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Paginated Items</h1>
+    <div class="items-container" id="items-container"></div>
+    <button id="load-more">Load More</button>
+
+    <script src="js/test-magazines-pagination.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TL MODA Engagement</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .container {
+            width: 300px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .item-container {
+            border: 1px solid #ddd;
+            height: 150px;
+            /* Height for 3 items */
+            overflow: hidden;
+        }
+
+        .item {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+
+        .pagination-controls {
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 5px 10px;
+            margin: 0 5px;
+        }
+
+        button:disabled {
+            background-color: #ddd;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div class="navbar">
+            <div class="logo">TL MODA</div>
+            <nav>
+                <ul>
+                    <li><a href="#">Home</a></li>
+                    <li><a href="#">About</a></li>
+                    <li><a href="#">Become a Member</a></li>
+                    <li><a href="#">Engagement</a></li>
+                    <li><a href="#">Avenues Magazine</a></li>
+                    <li><a href="#">News</a></li>
+                    <li><a href="#">Dealer Locator</a></li>
+                </ul>
+            </nav>
+            <div class="search-icon">&#128269;</div>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="hero-content">
+            <h1>Engagement</h1>
+            <p>Driving Positive Change Beyond the Dealership!</p>
+        </div>
+        <div class="hero-image">
+            <img src="example-hero.jpg" alt="Engagement Hero">
+        </div>
+    </section>
+
+    <div class="container">
+        <div class="item-container">
+            <div class="items">
+                <div class="item" style="display: none;">Item 1</div>
+                <div class="item" style="display: none;">Item 2</div>
+                <div class="item" style="display: none;">Item 3</div>
+                <div class="item" style="display: none;">Item 4</div>
+                <div class="item" style="display: none;">Item 5</div>
+                <div class="item" style="display: none;">Item 6</div>
+                <div class="item" style="display: none;">Item 7</div>
+                <div class="item" style="display: none;">Item 8</div>
+                <div class="item" style="display: none;">Item 9</div>
+                <div class="item" style="display: none;">Item 10</div>
+                <div class="item" style="display: none;">Item 11</div>
+                <div class="item" style="display: none;">Item 12</div>
+                <div class="item" style="display: none;">Item 13</div>
+                <div class="item" style="display: none;">Item 14</div>
+                <div class="item" style="display: none;">Item 15</div>
+                <div class="item" style="display: none;">Item 16</div>
+                <div class="item" style="display: none;">Item 17</div>
+                <div class="item" style="display: none;">Item 18</div>
+                <div class="item" style="display: none;">Item 19</div>
+                <div class="item" style="display: none;">Item 20</div>
+            </div>
+        </div>
+        <div class="pagination-controls">
+            <button id="prev" disabled>Previous</button>
+            <button id="next">Next</button>
+        </div>
+    </div>
+
+    <script src="js/pagination.js"></script>
+</body>
+
+</html>
