@@ -48,6 +48,10 @@ function addDealerToSidebar(location) {
     dealerHTML += createRow("schedule", props.hours);
     dealerHTML += createRow("person", props.diversity);
 
+    if (props.distance) {
+        dealerHTML += `<p><b>${props.distance.toFixed(2)} miles away</b></p>`;
+    }
+
     // Close the container
     dealerHTML += `</div>`;
 
@@ -77,9 +81,7 @@ function addLocationsToMap(locations, map) {
             .setLngLat([longitude, latitude])
             .setPopup(
                 new mapboxgl.Popup({ offset: 25 })
-                    .setHTML(
-                        `<h3>${props.name}</h3><p>${props.address}<br>${props.city}, ${props.state} ${props.postalCode}</p>`
-                    )
+                    .setHTML(createMarkerPopUpHTML(props))
             )
             .addTo(map);
         marker.getElement().addEventListener('click', () => {
@@ -112,6 +114,27 @@ function configureSidebar(features) {
     }
 }
 
+function createMarkerPopUpHTML(props) {
+    let popUpHTML = `
+        <h3>${props.name}</h3>
+        <p>${props.address}<br>${props.city}, ${props.state} ${props.postalCode}</p>  
+    `;
+
+    if (props.diversity) {
+        popUpHTML += `<p>${props.diversity}</p>`
+    }
+
+    if (props.hours) {
+        popUpHTML += `<p>${props.hours}</p>`
+    }
+
+    if (props.website) {
+        popUpHTML += `<a href="${props.website}" target="_blank" rel="noopener noreferrer">${props.website}</a>`
+    }
+
+    return popUpHTML;
+}
+
 /**
  * Recursively fetch all pages of dealer locations, returning a single array
  * of DOM elements (.dealer-location-item.w-dyn-item).
@@ -120,7 +143,10 @@ function configureSidebar(features) {
  */
 async function fetchNextLocations(url) {
     const pageContent = await fetchPageContent(url);
-    if (!pageContent) return [];
+    if (!pageContent) {
+        console.log(`Page content not found for URL: ${url}.`);
+        return [];
+    }
 
     const $dealerLocationsCollection = $(pageContent).find('.dealer-locations-collection');
     const nextPageUrl = getNextPageURL($dealerLocationsCollection);
