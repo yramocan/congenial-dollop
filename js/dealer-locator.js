@@ -83,6 +83,23 @@ function addLocationsToMap(locations, map) {
     }
 }
 
+function calculateDistanceToLocationFeature(feature, originCoordinates) {
+    const options = { units: 'miles' };
+    return turf.distance(
+        { "type": "Point", "coordinates": originCoordinates },
+        feature.geometry,
+        options
+    );
+}
+
+function configureSidebar(features) {
+    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${features.length} Dealerships`;
+    removeSidebarLocations();
+    for (const feature of features) {
+        addDealerToSidebar(feature);
+    }
+}
+
 /**
  * Recursively fetch all pages of dealer locations, returning a single array
  * of DOM elements (.dealer-location-item.w-dyn-item).
@@ -121,7 +138,7 @@ async function fetchPageContent(url) {
  * @returns {Promise<Array>} - Array of parsed dealer location objects.
  */
 async function getAllDealerLocations() {
-    const currentDealerElements = Array.from(getFirstPageDealerElements());
+    const currentDealerElements = getCurrentDealerElements();
     const nextPageUrl = getNextPageURL($('.dealer-locations-collection'));
 
     const allDealerElements = nextPageUrl
@@ -135,8 +152,8 @@ async function getAllDealerLocations() {
  * Gets the dealer location elements already present in the DOM.
  * @returns {HTMLCollection} - Collection of dealer location elements.
  */
-function getFirstPageDealerElements() {
-    return document.querySelector('.dealer-locations-collection .w-dyn-items')?.children || [];
+function getCurrentDealerElements() {
+    return Array.from(document.querySelector('.dealer-locations-collection .w-dyn-items')?.children || []);
 }
 
 /**
@@ -198,6 +215,21 @@ function parseDealerElement(dealerElement) {
     return feature;
 }
 
+function removeSidebarLocations() {
+    const sidebar = document.querySelector('.dealer-locator-sidebar-items-list');
+    while (sidebar.firstChild) {
+        sidebar.removeChild(sidebar.firstChild);
+    }
+}
+
+function setUpGeocoder() {
+    return new MapboxGeocoder({
+        accessToken: mapboxgl.accessToken,
+        mapboxgl: mapboxgl,
+        marker: true,
+    });
+}
+
 /**
  * Initializes and sets up the Mapbox map.
  * @returns {Object} - Mapbox map instance.
@@ -212,44 +244,66 @@ function setUpLocatorMap() {
         zoom: 6
     });
 
-    const geocoder = new MapboxGeocoder({
-        accessToken: mapboxgl.accessToken,
-        mapboxgl: mapboxgl,
-        marker: true,
-    });
-
-    map.addControl(geocoder, 'top-left');
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
-
     return map;
+}
+
+function sortLocationsByDistance(originCoordinates, geoJSON) {
+    for (const feature of geoJSON.features) {
+        feature.properties.distance = calculateDistanceToLocationFeature(feature, originCoordinates);
+    }
+
+    geoJSON.features.sort((a, b) => {
+        if (a.properties.distance > b.properties.distance) {
+            return 1;
+        }
+        if (a.properties.distance < b.properties.distance) {
+            return -1;
+        }
+        return 0;
+    });
 }
 
 // Initialize the Mapbox map
 const map = setUpLocatorMap();
+const geocoder = setUpGeocoder();
+map.addControl(geocoder, 'top-left');
+
+// Get user location and update map center
+getLocation((error, coords) => {
+    if (error) {
+        console.error(error);
+    } else {
+        map.setCenter([coords.lon, coords.lat]);
+    }
+});
 
 /**
  * Main function: Fetches user location and dealer locations, then updates the map.
  */
 (async function main() {
-    // Get user location and update map center
-    getLocation((error, coords) => {
-        if (error) {
-            console.error(error);
-        } else {
-            map.setCenter([coords.lon, coords.lat]);
-        }
-    });
-
     const features = await getAllDealerLocations();
     const geoJSON = {
         type: 'FeatureCollection',
         features: features
     };
 
-    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${geoJSON.features.length} Dealerships`;
-    for (const feature of geoJSON.features) {
-        addDealerToSidebar(feature);
-    }
+    getLocation((error, coords) => {
+        if (error) {
+            console.error(error);
+        } else {
+            sortLocationsByDistance([coords.lon, coords.lat], geoJSON);
+            configureSidebar(geoJSON.features);
+        }
+    });
+
+    configureSidebar(geoJSON.features);
+
+    geocoder.on('result', (event) => {
+        const coordinates = event.result.geometry.coordinates;
+        sortLocationsByDistance(coordinates, geoJSON);
+        configureSidebar(geoJSON.features);
+    });
 
     // Load dealer locations on map
     map.on('load', () => {
