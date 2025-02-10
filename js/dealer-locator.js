@@ -53,6 +53,12 @@ function addDealerToSidebar(location) {
 
     // Set the innerHTML and append to sidebar
     dealerItem.innerHTML = dealerHTML;
+
+    dealerItem.addEventListener('click', () => {
+        setSidebarItemActive(dealerItem.id);
+        flyToLocation(location);
+    });
+
     sidebarList.appendChild(dealerItem);
 }
 
@@ -67,7 +73,7 @@ function addLocationsToMap(locations, map) {
         const latitude = location.geometry.coordinates[1];
         const longitude = location.geometry.coordinates[0];
 
-        const marker = new mapboxgl.Marker({ className: "dealer-location-pin", color: "red" })
+        const marker = new mapboxgl.Marker({ className: "dealer-location-pin", color: "#f31b37" })
             .setLngLat([longitude, latitude])
             .setPopup(
                 new mapboxgl.Popup({ offset: 25 })
@@ -77,6 +83,9 @@ function addLocationsToMap(locations, map) {
             )
             .addTo(map);
         marker.getElement().addEventListener('click', () => {
+            const itemID = DEALER_SIDEBAR_ITEM_PREFIX + props.id;
+            setSidebarItemActive(itemID);
+            scrollToItemWithID(itemID);
             map.flyTo({
                 center: [longitude, latitude],
                 zoom: 13,
@@ -134,6 +143,17 @@ async function fetchPageContent(url) {
         console.error('Error fetching the page:', error);
         return null;
     }
+}
+
+/**
+   * Use Mapbox GL JS's `flyTo` to move the camera smoothly
+   * a given dealer location feature.
+   **/
+function flyToLocation(feature) {
+    map.flyTo({
+        center: feature.geometry.coordinates,
+        zoom: 15
+    });
 }
 
 /**
@@ -225,6 +245,23 @@ function removeSidebarLocations() {
     }
 }
 
+function scrollToItemWithID(elementID) {
+    const listItem = document.getElementById(elementID);
+    const height = listItem.offsetHeight;
+    const topPos = listItem.offsetTop - height;
+    document.getElementById('dealer-locator-sidebar').scrollTop = topPos;
+}
+
+function setSidebarItemActive(itemID) {
+    const sidebarList = document.querySelector('.dealer-locator-sidebar-items-list');
+    const activeItems = sidebarList.getElementsByClassName('active');
+    for (const activeItem of activeItems) {
+        activeItem.classList.remove('active');
+    }
+
+    document.getElementById(itemID).classList.add("active");
+}
+
 function setUpGeocoder() {
     return new MapboxGeocoder({
         accessToken: mapboxgl.accessToken,
@@ -306,6 +343,9 @@ getLocation((error, coords) => {
         const coordinates = event.result.geometry.coordinates;
         sortLocationsByDistance(coordinates, geoJSON);
         configureSidebar(geoJSON.features);
+
+        const idOfFirstItemInSidebar = DEALER_SIDEBAR_ITEM_PREFIX + geoJSON.features[0].properties.id;
+        scrollToItemWithID(idOfFirstItemInSidebar);
     });
 
     // Load dealer locations on map
