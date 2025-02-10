@@ -1,3 +1,5 @@
+const DEALER_SIDEBAR_ITEM_PREFIX = "dealer-sidebar-location-"
+
 /**
  * Adds a dealer location item to the sidebar list.
  *
@@ -18,6 +20,7 @@ function addDealerToSidebar(location) {
     // Create dealer location item container
     const dealerItem = document.createElement('div');
     dealerItem.classList.add('dealer-location-item');
+    dealerItem.id = DEALER_SIDEBAR_ITEM_PREFIX + props.id;
 
     // Create the dealer name section
     let dealerHTML = `<div class="dealer-item-name">${props.name}</div><div class="dealer-location-item-facts w-layout-vflex">`;
