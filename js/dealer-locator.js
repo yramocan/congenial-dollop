@@ -72,6 +72,7 @@ function addDealerToSidebar(location) {
  * @param {Object} map - Mapbox map instance.
  */
 function addLocationsToMap(locations, map) {
+    console.log(`Adding locations to map: ${locations}. Is map loaded? ${map.loaded()}`);
     for (const location of locations) {
         const props = location.properties
         const latitude = location.geometry.coordinates[1];
@@ -335,47 +336,32 @@ const map = setUpLocatorMap();
 const geocoder = setUpGeocoder();
 map.addControl(geocoder, 'top-left');
 
-// Get user location and update map center
 getLocation((error, coords) => {
     if (error) {
         console.error(error);
     } else {
         map.setCenter([coords.lon, coords.lat]);
-    }
-});
-
-/**
- * Main function: Fetches user location and dealer locations, then updates the map.
- */
-(async function main() {
-    const features = await getAllDealerLocations();
-    const geoJSON = {
-        type: 'FeatureCollection',
-        features: features
-    };
-
-    getLocation((error, coords) => {
-        if (error) {
-            console.error(error);
-        } else {
+        map.on('load', async () => {
+            console.log("Map has loaded!");
+            const features = await getAllDealerLocations();
+            const geoJSON = {
+                type: 'FeatureCollection',
+                features: features
+            };
+        
             sortLocationsByDistance([coords.lon, coords.lat], geoJSON);
             configureSidebar(geoJSON.features);
-        }
-    });
-
-    configureSidebar(geoJSON.features);
-
-    geocoder.on('result', (event) => {
-        const coordinates = event.result.geometry.coordinates;
-        sortLocationsByDistance(coordinates, geoJSON);
-        configureSidebar(geoJSON.features);
-
-        const idOfFirstItemInSidebar = DEALER_SIDEBAR_ITEM_PREFIX + geoJSON.features[0].properties.id;
-        scrollToItemWithID(idOfFirstItemInSidebar);
-    });
-
-    // Load dealer locations on map
-    map.on('load', () => {
-        addLocationsToMap(geoJSON.features, map);
-    });
-})();
+        
+            geocoder.on('result', (event) => {
+                const coordinates = event.result.geometry.coordinates;
+                sortLocationsByDistance(coordinates, geoJSON);
+                configureSidebar(geoJSON.features);
+        
+                const idOfFirstItemInSidebar = DEALER_SIDEBAR_ITEM_PREFIX + geoJSON.features[0].properties.id;
+                scrollToItemWithID(idOfFirstItemInSidebar);
+            });
+        
+            addLocationsToMap(geoJSON.features, map);
+        });
+    }
+});
