@@ -1,4 +1,38 @@
 const DEALER_SIDEBAR_ITEM_PREFIX = "dealer-sidebar-location-"
+const map = setUpLocatorMap();
+const geocoder = setUpGeocoder();
+
+let cachedBBox = null;  // Store the bounding box covering all previous fetches
+let dealersCache = [];  // Store fetched dealer locations
+const dealerIDsSet = new Set(); // Stores unique dealer IDs
+let markers = []; // Store markers on map
+const markerIDs = new Set(); // Track added marker IDs to prevent duplicates
+let totalDealerCount = 0;
+
+map.addControl(geocoder, 'top-left');
+
+navigator.geolocation.getCurrentPosition(
+    (position) => map.setCenter([position.coords.longitude, position.coords.latitude]),
+    (error) => console.error(error)
+);
+
+map.on("moveend", async () => {
+    const bounds = map.getBounds();
+    const center = map.getCenter();
+    const geoJSON = await fetchDealerLocationsInBoundingBox(bounds);
+    sortLocationsByDistance([center.lon, center.lat], geoJSON);
+    configureSidebar(geoJSON.features);
+    addLocationsToMap(geoJSON.features, map);
+});
+
+geocoder.on('result', (event) => {
+    const coordinates = event.result.geometry.coordinates;
+    sortLocationsByDistance(coordinates, geoJSON);
+    configureSidebar(geoJSON.features);
+
+    const idOfFirstItemInSidebar = DEALER_SIDEBAR_ITEM_PREFIX + geoJSON.features[0].properties.id;
+    scrollToItemWithID(idOfFirstItemInSidebar);
+});
 
 /**
  * Adds a dealer location item to the sidebar list.
@@ -23,7 +57,7 @@ function addDealerToSidebar(location) {
     dealerItem.id = DEALER_SIDEBAR_ITEM_PREFIX + props.id;
 
     // Create the dealer name section
-    let dealerHTML = `<div class="dealer-item-name">${props.name}</div><div class="dealer-location-item-facts w-layout-vflex">`;
+    let dealerHTML = `<div class="dealer-item-name">${props.dealer_name}</div><div class="dealer-location-item-facts w-layout-vflex">`;
 
     /**
      * Helper function to generate a row only if the value exists.
@@ -41,11 +75,11 @@ function addDealerToSidebar(location) {
 
     // Append rows conditionally
     dealerHTML += createRow("location_on",
-        props.address && props.city && props.state && props.postalCode
-            ? `${props.address}<br>${props.city}, ${props.state} ${props.postalCode}`
+        props.address && props.city && props.state && props.postal_code
+            ? `${props.address}<br>${props.city}, ${props.state} ${props.postal_code}`
             : null);
     dealerHTML += createRow("call", props.phone);
-    dealerHTML += createRow("schedule", props.hours);
+    dealerHTML += createRow("schedule", props.open_hours);
     dealerHTML += createRow("person", props.diversity);
 
     if (props.distance) {
@@ -72,11 +106,13 @@ function addDealerToSidebar(location) {
  * @param {Object} map - Mapbox map instance.
  */
 function addLocationsToMap(locations, map) {
-    console.log(`Adding locations to map: ${locations}. Is map loaded? ${map.loaded()}`);
     for (const location of locations) {
         const props = location.properties
         const latitude = location.geometry.coordinates[1];
         const longitude = location.geometry.coordinates[0];
+
+        // Skip if marker already exists
+        if (markerIDs.has(props.id)) continue;
 
         const marker = new mapboxgl.Marker({ className: "dealer-location-pin", color: "#f31b37" })
             .setLngLat([longitude, latitude])
@@ -85,6 +121,11 @@ function addLocationsToMap(locations, map) {
                     .setHTML(createMarkerPopUpHTML(props))
             )
             .addTo(map);
+
+        // Store marker reference and mark as added
+        markers.push(marker);
+        markerIDs.add(props.id);
+
         marker.getElement().addEventListener('click', () => {
             const itemID = DEALER_SIDEBAR_ITEM_PREFIX + props.id;
             setSidebarItemActive(itemID);
@@ -108,68 +149,140 @@ function calculateDistanceToLocationFeature(feature, originCoordinates) {
 }
 
 function configureSidebar(features) {
-    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${features.length} Dealerships`;
-    removeSidebarLocations();
+    document.querySelector(".dealer-locator-sidebar-header-text").innerHTML = `${totalDealerCount} Dealerships`;
     for (const feature of features) {
+        // Skip if marker already exists
+        if (markerIDs.has(feature.properties.id)) continue;
         addDealerToSidebar(feature);
     }
 }
 
 function createMarkerPopUpHTML(props) {
     let popUpHTML = `
-        <h3>${props.name}</h3>
-        <p>${props.address}<br>${props.city}, ${props.state} ${props.postalCode}</p>  
+        <h3>${props.dealer_name}</h3>
+        <p>${props.address}<br>${props.city}, ${props.state} ${props.postal_code}</p>  
     `;
 
-    if (props.diversity) {
-        popUpHTML += `<p>${props.diversity}</p>`
+    if (props.description) {
+        popUpHTML += `<p>${props.description}</p>`
     }
 
-    if (props.hours) {
-        popUpHTML += `<p>${props.hours}</p>`
+    if (props.open_hours) {
+        popUpHTML += `<p>${props.open_hours}</p>`
     }
 
     if (props.website) {
         popUpHTML += `<a href="${props.website}" target="_blank" rel="noopener noreferrer">${props.website}</a>`
     }
 
+    if (props.diversity) {
+        popUpHTML += `<p>${props.diversity}</p>`
+    }
+
     return popUpHTML;
 }
 
-/**
- * Recursively fetch all pages of dealer locations, returning a single array
- * of DOM elements (.dealer-location-item.w-dyn-item).
- * @param {string} url - URL to fetch dealer locations from.
- * @returns {Promise<Array>} - Array of dealer location elements.
- */
-async function fetchNextLocations(url) {
-    const pageContent = await fetchPageContent(url);
-    if (!pageContent) {
-        console.log(`Page content not found for URL: ${url}.`);
-        return [];
-    }
-
-    const $dealerLocationsCollection = $(pageContent).find('.dealer-locations-collection');
-    const nextPageUrl = getNextPageURL($dealerLocationsCollection);
-    const currentPageItems = $dealerLocationsCollection.find('.dealer-location-item.w-dyn-item').toArray();
-
-    return nextPageUrl ? currentPageItems.concat(await fetchNextLocations(nextPageUrl)) : currentPageItems;
+function dealerToGeoJSON(dealer) {
+    return {
+        type: "Feature",
+        geometry: {
+            type: "Point",
+            coordinates: [dealer.longitude, dealer.latitude],
+        },
+        properties: {
+            id: dealer.id,
+            slug: dealer.slug,
+            dealer_name: dealer.dealer_name,
+            description: dealer.description ? dealer.description.replace(/\\n/g, "<br>") : dealer.description,
+            address: dealer.address,
+            city: dealer.city,
+            state: dealer.state,
+            postal_code: dealer.postal_code,
+            phone: dealer.phone,
+            open_hours: dealer.open_hours ? dealer.open_hours.replace(/\\n/g, "<br>") : dealer.open_hours,
+            diversity: dealer.diversity,
+            website: dealer.website,
+        }
+    };
 }
 
-/**
- * Fetches the raw HTML content from a URL.
- * @param {string} url - URL to fetch.
- * @returns {Promise<string|null>} - HTML content or null on failure.
- */
-async function fetchPageContent(url) {
+async function fetchDealerLocationsInBoundingBox(bounds) {
+    // Extract southwest (min) and northeast (max) coordinates from Mapbox's LngLatBounds
+    const minLng = bounds.getSouthWest().lng;
+    const minLat = bounds.getSouthWest().lat;
+    const maxLng = bounds.getNorthEast().lng;
+    const maxLat = bounds.getNorthEast().lat;
+    const newBBox = [minLng, minLat, maxLng, maxLat];
+
+    // If we already have a cached bounding box, check if the new bbox is inside it
+    if (cachedBBox && isBBoxInside(newBBox, cachedBBox)) return turf.featureCollection(dealersCache);
+
+    const apiUrl = `https://tl-moda.yramocan.workers.dev/dealers?min_latitude=${minLat}&max_latitude=${maxLat}&min_longitude=${minLng}&max_longitude=${maxLng}`;
+
     try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Network error: ${response.status} ${response.statusText}`);
-        return await response.text();
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error(`Error fetching dealer locations: ${response.statusText}`);
+
+        const data = await response.json();
+        const newDealers = data.dealers.map(dealerToGeoJSON);
+        totalDealerCount = data.metadata.total_dealers;
+
+        // Filter out duplicates by checking `id`
+        const uniqueDealers = newDealers.filter(dealer => {
+            if (dealerIDsSet.has(dealer.properties.id)) {
+                return false; // Already exists, don't add it
+            }
+            dealerIDsSet.add(dealer.properties.id); // Mark this dealer as seen
+            return true;
+        });
+
+        dealersCache = [...dealersCache, ...uniqueDealers];
+
+        cachedBBox = cachedBBox
+            ? mergeBoundingBoxes(cachedBBox, newBBox)
+            : newBBox;
+
+        return turf.featureCollection(dealersCache);
     } catch (error) {
-        console.error('Error fetching the page:', error);
-        return null;
+        console.error("Failed to fetch dealers:", error);
+        return [];
     }
+}
+
+// Helper function: Check if one bounding box is inside another
+function isBBoxInside(innerBBox, outerBBox) {
+    return (
+        innerBBox[0] >= outerBBox[0] && // minLng is greater
+        innerBBox[1] >= outerBBox[1] && // minLat is greater
+        innerBBox[2] <= outerBBox[2] && // maxLng is smaller
+        innerBBox[3] <= outerBBox[3]    // maxLat is smaller
+    );
+}
+
+// Helper function: Merge two bounding boxes into the smallest bbox that contains both
+function mergeBoundingBoxes(bbox1, bbox2) {
+    return [
+        Math.min(bbox1[0], bbox2[0]), // minLng
+        Math.min(bbox1[1], bbox2[1]), // minLat
+        Math.max(bbox1[2], bbox2[2]), // maxLng
+        Math.max(bbox1[3], bbox2[3])  // maxLat
+    ];
+}
+
+function replaceNewlinesInJSON(json) {
+    function traverse(obj) {
+        if (Array.isArray(obj)) {
+            console.log("is array");
+            return obj.map(item => (typeof item === "string" ? item.replace(/\\n/g, "<br>") : traverse(item)));
+        } else if (typeof obj === "object" && obj !== null) {
+            for (const key in obj) {
+                obj[key] = traverse(obj[key]);
+            }
+        }
+        return obj;
+    }
+
+    traverse(json);
 }
 
 /**
@@ -181,95 +294,6 @@ function flyToLocation(feature) {
         center: feature.geometry.coordinates,
         zoom: 15
     });
-}
-
-/**
- * Gets all dealer location elements (first page and fetched pages).
- * @returns {Promise<Array>} - Array of parsed dealer location objects.
- */
-async function getAllDealerLocations() {
-    const currentDealerElements = getCurrentDealerElements();
-    const nextPageUrl = getNextPageURL($('.dealer-locations-collection'));
-
-    const allDealerElements = nextPageUrl
-        ? currentDealerElements.concat(await fetchNextLocations(nextPageUrl))
-        : currentDealerElements;
-
-    return allDealerElements.map(parseDealerElement);
-}
-
-/**
- * Gets the dealer location elements already present in the DOM.
- * @returns {HTMLCollection} - Collection of dealer location elements.
- */
-function getCurrentDealerElements() {
-    return Array.from(document.querySelector('.dealer-locations-collection .w-dyn-items')?.children || []);
-}
-
-/**
- * Retrieves the user's current latitude and longitude.
- * @param {function} callback - Callback function with (error, location) params.
- */
-function getLocation(callback) {
-    navigator.geolocation.getCurrentPosition(
-        (position) => callback(null, { lat: position.coords.latitude, lon: position.coords.longitude }),
-        (error) => callback(`Error getting location: ${error.message}`, null)
-    );
-}
-
-/**
- * Extracts the next page URL from the .dealer-locations-collection container.
- * @param {jQuery} $container - jQuery-wrapped container element.
- * @returns {string|null} - Next page URL or null if not found.
- */
-function getNextPageURL($container) {
-    if ($container.length === 0) {
-        console.log('No element found with class dealer-locations-collection');
-        return null;
-    }
-
-    const hrefValue = $container.find('a.w-pagination-next').attr('href');
-    return hrefValue ? (window.location.origin + window.location.pathname + hrefValue) : null;
-}
-
-/**
- * Parses a dealer location element into a GeoJSON feature.
- * @param {HTMLElement} dealerElement - The dealer location element.
- * @returns {Object} - Parsed dealer location data as a GeoJSON feature.
- */
-function parseDealerElement(dealerElement) {
-    const lon = parseFloat(dealerElement.getAttribute("data-dealer-lon"));
-    const lat = parseFloat(dealerElement.getAttribute("data-dealer-lat"));
-
-    let feature = {
-        "type": "Feature",
-        "geometry": {
-            "type": "Point",
-            "coordinates": [lon, lat]
-        },
-        "properties": {}
-    };
-
-    const attributesToExtract = [
-        "id", "name", "description", "address", "city", "state",
-        "postalCode", "phone", "hours", "diversity", "website"
-    ];
-
-    const properties = {};
-    attributesToExtract.forEach(attr => {
-        let attrValue = dealerElement.getAttribute(`data-dealer-${attr}`);
-        properties[attr] = attrValue ? attrValue.replace(/\\n/g, "<br>") : null;
-    });
-
-    feature.properties = properties;
-    return feature;
-}
-
-function removeSidebarLocations() {
-    const sidebar = document.querySelector('.dealer-locator-sidebar-items-list');
-    while (sidebar.firstChild) {
-        sidebar.removeChild(sidebar.firstChild);
-    }
 }
 
 function scrollToItemWithID(elementID) {
@@ -330,38 +354,3 @@ function sortLocationsByDistance(originCoordinates, geoJSON) {
         return 0;
     });
 }
-
-// Initialize the Mapbox map
-const map = setUpLocatorMap();
-const geocoder = setUpGeocoder();
-map.addControl(geocoder, 'top-left');
-
-getLocation((error, coords) => {
-    if (error) {
-        console.error(error);
-    } else {
-        map.setCenter([coords.lon, coords.lat]);
-        map.on('load', async () => {
-            console.log("Map has loaded!");
-            const features = await getAllDealerLocations();
-            const geoJSON = {
-                type: 'FeatureCollection',
-                features: features
-            };
-        
-            sortLocationsByDistance([coords.lon, coords.lat], geoJSON);
-            configureSidebar(geoJSON.features);
-        
-            geocoder.on('result', (event) => {
-                const coordinates = event.result.geometry.coordinates;
-                sortLocationsByDistance(coordinates, geoJSON);
-                configureSidebar(geoJSON.features);
-        
-                const idOfFirstItemInSidebar = DEALER_SIDEBAR_ITEM_PREFIX + geoJSON.features[0].properties.id;
-                scrollToItemWithID(idOfFirstItemInSidebar);
-            });
-        
-            addLocationsToMap(geoJSON.features, map);
-        });
-    }
-});
